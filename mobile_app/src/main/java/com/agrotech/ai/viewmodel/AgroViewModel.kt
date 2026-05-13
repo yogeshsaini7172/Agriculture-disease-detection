@@ -1,0 +1,368 @@
+package com.agrotech.ai.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.agrotech.ai.data.model.*
+import com.agrotech.ai.data.repository.AgroRepository
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+class AgroViewModel(private val repository: AgroRepository) : ViewModel() {
+
+    private val _weatherState = MutableStateFlow<WeatherData?>(null)
+    val weatherState: StateFlow<WeatherData?> = _weatherState
+
+    private val _userState = MutableStateFlow<User?>(User("1", "Admin Farmer", "1234567890", "admin"))
+    val userState: StateFlow<User?> = _userState
+
+    private val _cropRec = MutableStateFlow<RecommendationResponse?>(null)
+    val cropRec: StateFlow<RecommendationResponse?> = _cropRec
+
+    private val _fertilizerRec = MutableStateFlow<RecommendationResponse?>(null)
+    val fertilizerRec = _fertilizerRec.asStateFlow()
+
+    private val _futureRec = MutableStateFlow<RecommendationResponse?>(null)
+    val futureRec = _futureRec.asStateFlow()
+
+    private val _iotState = MutableStateFlow<IotData?>(null)
+    val iotState = _iotState.asStateFlow()
+
+    private val _iotHistory = MutableStateFlow<List<IotData>>(emptyList())
+    val iotHistory = _iotHistory.asStateFlow()
+
+    private val _stressResult = MutableStateFlow<StressDetectionResponse?>(null)
+    val stressResult: StateFlow<StressDetectionResponse?> = _stressResult
+
+    private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing
+
+    private val _errorState = MutableStateFlow<String?>(null)
+    val errorState: StateFlow<String?> = _errorState
+
+    // ── Selected language ──
+    private val _selectedLanguage = MutableStateFlow("en")
+    val selectedLanguage: StateFlow<String> = _selectedLanguage.asStateFlow()
+
+    private val _cropAnalysisResult = MutableStateFlow<CropAnalysisResponse?>(null)
+    val cropAnalysisResult = _cropAnalysisResult.asStateFlow()
+
+    private val _isSatelliteLoading = MutableStateFlow(false)
+    val isSatelliteLoading = _isSatelliteLoading.asStateFlow()
+
+    private val _pendingChatQuery = MutableStateFlow<String?>(null)
+    val pendingChatQuery: StateFlow<String?> = _pendingChatQuery.asStateFlow()
+
+    // ── Notifications ──
+    val notifications = com.agrotech.ai.data.local.NotificationManager.notifications
+    val unreadNotificationsCount = com.agrotech.ai.data.local.NotificationManager.unreadCount
+
+    init {
+        startIotPolling()
+    }
+
+    fun setPendingChatQuery(query: String?) {
+        _pendingChatQuery.value = query
+    }
+
+    fun setLanguage(code: String) {
+        _selectedLanguage.value = code
+    }
+
+    fun login(mobileNumber: String, pass: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            
+            // LOCAL BYPASS for admin
+            if (mobileNumber == "1234567890" && pass == "123456") {
+                _userState.value = User("1", "Admin Farmer", mobileNumber, "admin")
+                onResult(null)
+                _isLoading.value = false
+                return@launch
+            }
+
+            try {
+                val response = repository.login(mobileNumber, pass)
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body?.success == true) {
+                        _userState.value = body.user
+                        // Store token in RetrofitClient for subsequent API calls
+                        com.agrotech.ai.data.remote.RetrofitClient.authToken = body.token
+                        onResult(null) // Success
+                    } else {
+                        onResult(body?.error ?: "Invalid credentials")
+                    }
+                } else {
+                    // Fallback for demo independence
+                    _userState.value = User("101", "Demo User", mobileNumber)
+                    onResult(null)
+                }
+            } catch (e: Exception) {
+                // Connection error fallback: Allow login for demo
+                _userState.value = User("101", "Demo User", mobileNumber)
+                onResult(null)
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun signup(name: String, mobileNumber: String, pass: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val response = repository.signup(name, mobileNumber, pass)
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    if (body?.success == true) {
+                        _userState.value = body.user
+                        com.agrotech.ai.data.remote.RetrofitClient.authToken = body.token
+                        onResult(null) // Success
+                    } else {
+                        onResult(body?.error ?: "Registration failed")
+                    }
+                } else {
+                    // Fallback
+                    _userState.value = User("202", name, mobileNumber)
+                    onResult(null)
+                }
+            } catch (e: Exception) {
+                // Connection error fallback
+                _userState.value = User("202", name, mobileNumber)
+                onResult(null)
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun connectDevice(deviceId: String, onResult: (String?) -> Unit) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val response = repository.connectDevice(deviceId)
+                if (response.isSuccessful && response.body()?.get("success") == true) {
+                    // Update user state with new device ID
+                    val currentUser = _userState.value
+                    if (currentUser != null) {
+                        _userState.value = currentUser.copy(deviceId = deviceId)
+                    }
+                    onResult(null)
+                } else {
+                    onResult(response.body()?.get("error")?.toString() ?: "Failed to connect device")
+                }
+            } catch (e: Exception) {
+                onResult("Network Error: ${e.message}")
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun fetchWeather(lat: Double, lon: Double) {
+        viewModelScope.launch {
+            _isRefreshing.value = true
+            _errorState.value = null
+            try {
+                val response = repository.getWeather(lat, lon)
+                if (response.isSuccessful) {
+                    _weatherState.value = response.body()
+                } else {
+                    _errorState.value = "Failed to fetch weather: ${response.code()}"
+                }
+            } catch (e: Exception) {
+                _errorState.value = "Weather Sync Error: ${e.message ?: "Connection lost"}"
+                e.printStackTrace()
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
+    fun getCropRecommendation(soilData: SoilData) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val dataWithLang = soilData.copy(lang = selectedLanguage.value)
+                val response = repository.getCropRec(dataWithLang)
+                if (response.isSuccessful) {
+                    _cropRec.value = response.body()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun getFertilizerRecommendation(data: FertilizerRequest) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorState.value = null
+            _fertilizerRec.value = null // Clear old result
+            try {
+                val dataWithLang = data.copy(lang = selectedLanguage.value)
+                val response = repository.getFertilizerRec(dataWithLang)
+                if (response.isSuccessful) {
+                    _fertilizerRec.value = response.body()
+                } else {
+                    _errorState.value = "Server Error: ${response.code()}"
+                }
+            } catch (e: Exception) {
+                _errorState.value = "Network Error: ${e.message}"
+                e.printStackTrace()
+            }
+            _isLoading.value = false
+        }
+    }
+
+    fun detectStress(imageUri: String, context: android.content.Context) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                // Convert URI to Base64
+                val base64Image = convertUriToBase64(imageUri, context)
+                if (base64Image != null) {
+                    val response = repository.detectStress(base64Image, selectedLanguage.value)
+                    if (response.isSuccessful) {
+                        _stressResult.value = response.body()
+                    } else {
+                        _errorState.value = "AI Analysis Failed: ${response.code()}"
+                    }
+                } else {
+                    _errorState.value = "Failed to process image"
+                }
+            } catch (e: Exception) {
+                _errorState.value = "Error: ${e.message}"
+                e.printStackTrace()
+            }
+            _isLoading.value = false
+        }
+    }
+
+    private fun convertUriToBase64(uriString: String, context: android.content.Context): String? {
+        return try {
+            val uri = android.net.Uri.parse(uriString)
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val bytes = inputStream?.readBytes()
+            inputStream?.close()
+            if (bytes != null) {
+                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun sendChatMessage(text: String, lang: String) {
+        println("DEBUG: sendChatMessage called with: $text")
+        viewModelScope.launch {
+            try {
+                val userMsg = ChatMessage(text, true)
+                _chatMessages.value = _chatMessages.value + userMsg
+                println("DEBUG: User message added to state")
+                
+                println("DEBUG: Calling repository.chat...")
+                val aiResponse = repository.chat(text, lang)
+                println("DEBUG: AI Response received: $aiResponse")
+                
+                val aiMsg = ChatMessage(aiResponse, false)
+                _chatMessages.value = _chatMessages.value + aiMsg
+            } catch (e: Exception) {
+                println("DEBUG: Chat Error: ${e.message}")
+                e.printStackTrace()
+                _chatMessages.value = _chatMessages.value + ChatMessage("Connection Error: ${e.message}", false)
+            }
+        }
+    }
+
+    fun simulateSensorData(soil: Double, temp: Double) {
+        viewModelScope.launch {
+            try {
+                repository.simulateIot(soil, temp)
+            } catch (e: Exception) {
+                // Ignore simulation errors
+            }
+        }
+    }
+
+    private fun startIotPolling() {
+        viewModelScope.launch {
+            while (true) {
+                try {
+                    val response = repository.getLatestIot()
+                    if (response.isSuccessful) {
+                        val newData = response.body()?.data
+                        _iotState.value = newData
+                        
+                        if (newData != null) {
+                            val currentList = _iotHistory.value.toMutableList()
+                            // Only add if it's a new timestamp to avoid duplicates
+                            if (currentList.isEmpty() || currentList.last().timestamp != newData.timestamp) {
+                                currentList.add(newData)
+                                if (currentList.size > 10) currentList.removeAt(0)
+                                _iotHistory.value = currentList
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Ignore errors during polling
+                }
+                delay(10000)
+            }
+        }
+    }
+
+    fun analyzeCrop(lat: Double, lon: Double, radius: Double) {
+        viewModelScope.launch {
+            _isSatelliteLoading.value = true
+            _cropAnalysisResult.value = null
+            _errorState.value = null
+            try {
+                val request = CropAnalysisRequest(
+                    latitude = lat,
+                    longitude = lon,
+                    radius = radius,
+                    temperature = _weatherState.value?.temperature,
+                    humidity = _weatherState.value?.humidity
+                )
+                val response = repository.analyzeCrop(request)
+                if (response.isSuccessful) {
+                    _cropAnalysisResult.value = response.body()
+                } else {
+                    _errorState.value = "Satellite Service Error: ${response.code()}"
+                }
+            } catch (e: Exception) {
+                _errorState.value = "Connection Error: ${e.message}"
+            } finally {
+                _isSatelliteLoading.value = false
+            }
+        }
+    }
+
+    fun getFutureRecommendation(lat: Double, lon: Double, days: Int, n: Float, p: Float, k: Float, ph: Float) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _futureRec.value = null
+            _errorState.value = null
+            try {
+                val response = repository.getFutureRecommendation(lat, lon, days, selectedLanguage.value, n, p, k, ph)
+                if (response.isSuccessful) {
+                    _futureRec.value = response.body()
+                } else {
+                    _errorState.value = "Future Sync Error: ${response.code()}"
+                }
+            } catch (e: Exception) {
+                _errorState.value = "Network Error: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+}

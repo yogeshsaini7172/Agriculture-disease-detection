@@ -1,0 +1,37 @@
+# Android
+.gradle/
+build/
+local.properties
+*.apk
+*.ap_
+*.dex
+*.class
+bin/ gen/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+venv/
+env/
+.pytest_cache/
+backend/temp/
+backend/saved_models/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# System
+Thumbs.db
+.DS_Store
+
+# Secrets
+backend/firebase-key.json
+mobile_app/google-services.json
+mobile_app/src/google-services.json
+mobile_app/google-services.json
+**/google-services.json
