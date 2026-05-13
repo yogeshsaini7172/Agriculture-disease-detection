@@ -209,8 +209,8 @@ if os.path.exists(MODEL_FILE):
         with open(MODEL_FILE, 'rb') as f:
             model = pickle.load(f)
             loaded = True
-    except (EOFError, pickle.UnpicklingError):
-        print("Corrupted model file detected, re-training...")
+    except Exception as e:
+        print(f"Failed to load model ({e}), re-training...")
 
 if not loaded:
     print("Training new model...")

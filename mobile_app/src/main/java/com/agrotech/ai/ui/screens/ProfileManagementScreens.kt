@@ -19,14 +19,72 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 
+import androidx.compose.runtime.*
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FarmProfilesScreen(navController: NavController) {
-    val farms = listOf(
-        FarmPlot("Main Wheat Field", "12.5 Acres", "Wheat"),
-        FarmPlot("River Side Plot", "8 Acres", "Rice"),
-        FarmPlot("North Valley", "4 Acres", "Cotton")
-    )
+    val farms = remember { 
+        mutableStateListOf(
+            FarmPlot("Main Wheat Field", "12.5 Acres", "Wheat"),
+            FarmPlot("River Side Plot", "8 Acres", "Rice"),
+            FarmPlot("North Valley", "4 Acres", "Cotton")
+        )
+    }
+
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newFarmName by remember { mutableStateOf("") }
+    var newFarmSize by remember { mutableStateOf("") }
+    var newFarmCrop by remember { mutableStateOf("") }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("Add New Plot") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = newFarmName,
+                        onValueChange = { newFarmName = it },
+                        label = { Text("Plot Name") },
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newFarmSize,
+                        onValueChange = { newFarmSize = it },
+                        label = { Text("Size (e.g., 5 Acres)") },
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newFarmCrop,
+                        onValueChange = { newFarmCrop = it },
+                        label = { Text("Crop Type") },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (newFarmName.isNotEmpty() && newFarmSize.isNotEmpty() && newFarmCrop.isNotEmpty()) {
+                        farms.add(FarmPlot(newFarmName, newFarmSize, newFarmCrop))
+                        showAddDialog = false
+                        newFarmName = ""
+                        newFarmSize = ""
+                        newFarmCrop = ""
+                    }
+                }) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -41,7 +99,7 @@ fun FarmProfilesScreen(navController: NavController) {
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { /* TODO: Add Plot */ },
+                onClick = { showAddDialog = true },
                 containerColor = MaterialTheme.colorScheme.primary
             ) {
                 Icon(Icons.Default.Add, contentDescription = "Add Farm", tint = Color.White)

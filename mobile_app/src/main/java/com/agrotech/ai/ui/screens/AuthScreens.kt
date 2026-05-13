@@ -29,8 +29,6 @@ import com.agrotech.ai.ui.theme.LocalAppStrings
 fun LoginScreen(navController: NavController, viewModel: AgroViewModel) {
     val strings = LocalAppStrings.current
     var mobileNumber by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
     
     val isLoading by viewModel.isLoading.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -61,35 +59,14 @@ fun LoginScreen(navController: NavController, viewModel: AgroViewModel) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                 )
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                AgroTextField(
-                    value = password, 
-                    onValueChange = { password = it }, 
-                    label = strings.password,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        val icon = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(imageVector = icon, contentDescription = "Toggle password visibility")
-                        }
-                    }
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                TextButton(onClick = { /* Forgot Password */ }, modifier = Modifier.align(Alignment.End)) {
-                    Text(strings.forgotPassword)
-                }
-                
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 if (isLoading) {
                     CircularProgressIndicator()
                 } else {
                     AgroButton(text = strings.login, onClick = { 
-                        if (mobileNumber.isNotEmpty() && password.isNotEmpty()) {
-                            viewModel.login(mobileNumber, password) { error ->
+                        if (mobileNumber.isNotEmpty()) {
+                            viewModel.login(mobileNumber) { error ->
                                 if (error == null) {
                                     navController.navigate(Screen.LanguageSelector.route)
                                 } else {
@@ -97,7 +74,7 @@ fun LoginScreen(navController: NavController, viewModel: AgroViewModel) {
                                 }
                             }
                         } else {
-                            scope.launch { snackbarHostState.showSnackbar("Please enter all details") }
+                            scope.launch { snackbarHostState.showSnackbar("Please enter mobile number") }
                         }
                     })
                 }
@@ -119,8 +96,6 @@ fun SignupScreen(navController: NavController, viewModel: AgroViewModel) {
     val strings = LocalAppStrings.current
     var name by remember { mutableStateOf("") }
     var mobileNumber by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) }
 
     val isLoading by viewModel.isLoading.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -155,30 +130,14 @@ fun SignupScreen(navController: NavController, viewModel: AgroViewModel) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                 )
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                AgroTextField(
-                    value = password, 
-                    onValueChange = { password = it }, 
-                    label = strings.password,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        val icon = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(imageVector = icon, contentDescription = "Toggle password visibility")
-                        }
-                    }
-                )
-                
                 Spacer(modifier = Modifier.height(32.dp))
                 
                 if (isLoading) {
                     CircularProgressIndicator()
                 } else {
                     AgroButton(text = strings.signup, onClick = { 
-                        if (name.isNotEmpty() && mobileNumber.isNotEmpty() && password.isNotEmpty()) {
-                            viewModel.signup(name, mobileNumber, password) { error ->
+                        if (name.isNotEmpty() && mobileNumber.isNotEmpty()) {
+                            viewModel.signup(name, mobileNumber) { error ->
                                 if (error == null) {
                                     navController.navigate(Screen.LanguageSelector.route)
                                 } else {

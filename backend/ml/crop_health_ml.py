@@ -150,52 +150,88 @@ def _rule_based_prediction(mean_ndvi: float) -> tuple:
     return label, conf
 
 
+import os
+import json
+import requests
+
 def predict(ndvi_stats: dict, extra_inputs: dict = None) -> dict:
     """
-    Main prediction entry point.
-
-    Steps:
-      1. Build the feature vector from NDVI stats + optional extra inputs.
-      2. [PLACEHOLDER] Pass features to your pre-trained ML model.
-      3. Fall back to rule-based classifier if model is not yet loaded.
-      4. Return a structured prediction dictionary.
-
-    Args:
-        ndvi_stats   (dict): Output of sentinel_service.extract_ndvi_stats()
-        extra_inputs (dict): Optional dict containing temperature, humidity, etc.
-
-    Returns:
-        dict: Full prediction result with label, confidence, and advice.
+    Main prediction entry point using Groq AI.
+    Falls back to rule-based prediction if Groq fails or API key is missing.
     """
     mean_ndvi = ndvi_stats.get("mean_ndvi", -1.0)
-
-    # ── STEP 1: Build feature vector ─────────────────────────────────────────
     features = build_feature_vector(ndvi_stats, extra_inputs)
     print(f"DEBUG [CropHealthML]: Feature vector = {features}")
 
-    # ── STEP 2: YOUR ML MODEL GOES HERE ──────────────────────────────────────
-    # TODO: Replace the block below with your actual model call.
-    #
-    # Example — scikit-learn / XGBoost:
-    #   import joblib
-    #   model = joblib.load("ml/models/crop_health_xgb.pkl")
-    #   label_idx  = int(model.predict([features])[0])
-    #   confidence = float(model.predict_proba([features])[0].max())
-    #   label      = NDVI_CLASSES[label_idx]
-    #
-    # Example — ONNX Runtime (same runtime already used in main.py):
-    #   import onnxruntime as ort, numpy as np
-    #   sess  = ort.InferenceSession("ml/models/crop_health.onnx")
-    #   inp   = {sess.get_inputs()[0].name: np.array([features], dtype=np.float32)}
-    #   out   = sess.run(None, inp)[0][0]
-    #   label = NDVI_CLASSES[int(np.argmax(out))]
-    #   confidence = float(out.max())
-    # ─────────────────────────────────────────────────────────────────────────
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    
+    if groq_api_key:
+        try:
+            prompt = f"""You are an expert Agronomist AI.
+Analyze the following Satellite NDVI statistics and environmental data to determine crop health and recommend interventions.
 
-    # ── STEP 3: Rule-based fallback (active until real model is plugged in) ──
+NDVI Statistics:
+- Mean NDVI: {ndvi_stats.get('mean_ndvi', 'N/A')}
+- Max NDVI: {ndvi_stats.get('max_ndvi', 'N/A')}
+- Min NDVI: {ndvi_stats.get('min_ndvi', 'N/A')}
+- Std Dev: {ndvi_stats.get('std_ndvi', 'N/A')}
+
+Environmental Data (Optional):
+- Temperature: {extra_inputs.get('temperature', 'N/A') if extra_inputs else 'N/A'}°C
+- Humidity: {extra_inputs.get('humidity', 'N/A') if extra_inputs else 'N/A'}%
+- Rainfall: {extra_inputs.get('rainfall', 'N/A') if extra_inputs else 'N/A'}mm
+- Soil pH: {extra_inputs.get('soil_ph', 'N/A') if extra_inputs else 'N/A'}
+
+Based on these features, output a JSON response matching exactly this format:
+{{
+  "prediction": "Healthy Vegetation", // Options: Critical Stress, Moderate Stress, Healthy Vegetation, Sparse / Bare Soil, Water Body / No Crop
+  "confidence": 0.95, // 0.0 to 1.0
+  "severity": "🟢 Optimal", // e.g. 🔴 Critical, 🟠 Moderate, 🟢 Optimal, 🟡 Low Activity, ⚪ Non-Agricultural
+  "irrigation_needed": false, // true or false
+  "irrigation_action": "Maintain current watering schedule.",
+  "nutrient_action": "Continue balanced fertiliser programme.",
+  "field_action": "Scout field for early pest signs.",
+  "next_satellite_check_days": 10 // integer
+}}
+Do NOT wrap the JSON in Markdown formatting like ```json. Return ONLY valid raw JSON."""
+
+            headers = {
+                "Authorization": f"Bearer {groq_api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "model": "llama3-70b-8192",
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"}
+            }
+
+            response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=payload, timeout=15)
+            if response.ok:
+                result_text = response.json()["choices"][0]["message"]["content"]
+                result_json = json.loads(result_text)
+                
+                return {
+                    "prediction":  result_json.get("prediction", "Unknown"),
+                    "confidence":  float(result_json.get("confidence", 0.8)),
+                    "severity":    result_json.get("severity", "Unknown"),
+                    "ndvi_health_score": round((mean_ndvi + 1) / 2 * 100, 1),
+                    "recommendation": {
+                        "irrigation_needed":          result_json.get("irrigation_needed", False),
+                        "irrigation_action":          result_json.get("irrigation_action", ""),
+                        "nutrient_action":            result_json.get("nutrient_action", ""),
+                        "field_action":               result_json.get("field_action", ""),
+                        "next_satellite_check_days":  int(result_json.get("next_satellite_check_days", 7)),
+                    }
+                }
+            else:
+                print(f"WARN [CropHealthML]: Groq API returned {response.status_code}. Falling back to rules.")
+        except Exception as e:
+            print(f"WARN [CropHealthML]: Groq AI failed ({e}). Falling back to rules.")
+
+    # ── STEP 3: Rule-based fallback (active if Groq API fails) ──
+    print("DEBUG [CropHealthML]: Using rule-based fallback logic.")
     label, confidence = _rule_based_prediction(mean_ndvi)
-
-    # ── STEP 4: Build response ────────────────────────────────────────────────
     advice = _ADVICE_DB.get(label, {})
 
     return {

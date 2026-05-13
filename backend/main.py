@@ -126,10 +126,9 @@ def signup():
     data = request.json or {}
     name          = (data.get('name') or '').strip()
     mobile_number = (data.get('mobile_number') or '').strip()
-    password      = (data.get('password') or '').strip()
 
-    if not name or not mobile_number or not password:
-        return jsonify({'success': False, 'error': 'name, mobile_number and password are required'}), 400
+    if not name or not mobile_number:
+        return jsonify({'success': False, 'error': 'name and mobile_number are required'}), 400
 
     if len(mobile_number) < 10:
         return jsonify({'success': False, 'error': 'Enter a valid mobile number (min 10 digits)'}), 400
@@ -140,7 +139,6 @@ def signup():
     user_data = {
         "name":          name,
         "mobile_number": mobile_number,
-        "password":      password,      # ⚠️ hash in production (e.g. bcrypt)
         "role":          "farmer",      # Default role
         "created_at":    datetime.utcnow(),
     }
@@ -168,14 +166,13 @@ def login():
     """
     data = request.json or {}
     mobile_number = (data.get('mobile_number') or '').strip()
-    password      = (data.get('password') or '').strip()
 
-    if not mobile_number or not password:
-        return jsonify({'success': False, 'error': 'mobile_number and password are required'}), 400
+    if not mobile_number:
+        return jsonify({'success': False, 'error': 'mobile_number is required'}), 400
 
     user = get_user_by_mobile(mobile_number)
-    if not user or user.get('password') != password:
-        return jsonify({'success': False, 'error': 'Invalid mobile number or password'}), 401
+    if not user:
+        return jsonify({'success': False, 'error': 'Mobile number not registered. Please sign up.'}), 401
 
     user_id = str(user['_id'])
     role    = user.get('role', 'farmer')
@@ -453,10 +450,22 @@ def receive_iot_data():
         if device_id:
             device_doc = get_device(device_id)
             if device_doc:
-                user_id = device_doc["user_id"]
-                print(f"DEBUG: Device '{device_id}' routed to user '{user_id}'")
+                user_id = device_doc.get("user_id")
+                if user_id:
+                    print(f"DEBUG: Device '{device_id}' routed to user '{user_id}'")
+                else:
+                    print(f"DEBUG: Device '{device_id}' exists but is unmapped.")
             else:
-                print(f"WARN: Device '{device_id}' is not mapped to any farmer – storing in global fallback.")
+                print(f"WARN: Discovery! New sensor '{device_id}' detected. Registering as unmapped hardware.")
+                from db.mongo_db import devices_col
+                if devices_col is not None:
+                    devices_col.insert_one({
+                        "device_id": device_id,
+                        "user_id": None,
+                        "farmer_name": "",
+                        "connected_at": datetime.utcnow(),
+                        "active": True
+                    })
 
         # ── 4. Irrigation decision logic ─────────────────────────────────────
         if 0 < soil < 30:

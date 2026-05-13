@@ -6,11 +6,11 @@ import retrofit2.Response
 
 class AgroRepository(private val apiService: ApiService) {
 
-    suspend fun login(mobileNumber: String, pass: String): Response<AuthResponse> = 
-        apiService.login(mapOf("mobile_number" to mobileNumber, "password" to pass))
+    suspend fun login(mobileNumber: String): Response<AuthResponse> = 
+        apiService.login(mapOf("mobile_number" to mobileNumber))
 
-    suspend fun signup(name: String, mobileNumber: String, pass: String): Response<AuthResponse> = 
-        apiService.signup(mapOf("name" to name, "mobile_number" to mobileNumber, "password" to pass))
+    suspend fun signup(name: String, mobileNumber: String): Response<AuthResponse> = 
+        apiService.signup(mapOf("name" to name, "mobile_number" to mobileNumber))
 
     suspend fun connectDevice(deviceId: String): Response<Map<String, Any>> =
         apiService.connectDevice(mapOf("device_id" to deviceId))

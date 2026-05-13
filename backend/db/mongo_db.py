@@ -123,7 +123,7 @@ def get_device_by_user(user_id: str):
 def map_device_to_user(device_id: str, user_id: str, farmer_name: str = ""):
     """
     Map device_id to user_id.
-    - If the device doesn't exist yet, create it.
+    - If the device doesn't exist yet, raise ValueError (it must be discovered by the backend first).
     - Raises ValueError if the device is already mapped to a DIFFERENT user.
     """
     if devices_col is None:
@@ -131,20 +131,24 @@ def map_device_to_user(device_id: str, user_id: str, farmer_name: str = ""):
         return True
 
     existing = get_device(device_id)
-    if existing:
+    if not existing:
+        raise ValueError(f"Sensor '{device_id}' does not exist. Ensure your hardware is turned on and connected to the server.")
+
+    if existing.get("user_id"):
         if existing["user_id"] == user_id:
             return True   # Already mapped to the same user, no-op
-        raise ValueError(
-            f"Device '{device_id}' is already mapped to another farmer."
-        )
+        raise ValueError(f"Device '{device_id}' is already mapped to another farmer.")
 
-    devices_col.insert_one({
-        "device_id":    device_id,
-        "user_id":      user_id,
-        "farmer_name":  farmer_name,
-        "connected_at": datetime.utcnow(),
-        "active":       True,
-    })
+    # Update existing unmapped device
+    devices_col.update_one(
+        {"device_id": device_id},
+        {"$set": {
+            "user_id": user_id,
+            "farmer_name": farmer_name,
+            "connected_at": datetime.utcnow(),
+            "active": True
+        }}
+    )
     return True
 
 

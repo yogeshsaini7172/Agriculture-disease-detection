@@ -32,7 +32,7 @@ echo 📡 ADB reverse tcp:5000...
 :: ── Start Flask in a new window ───────────────────────────────────────────────
 echo 🚀 Launching Flask backend (new window)...
 start "AgroTech Backend" cmd /k "cd /d "%BACKEND_DIR%" && python main.py"
-timeout /t 4 /nobreak >nul
+ping 127.0.0.1 -n 5 > nul
 
 :: ── Build Android App ─────────────────────────────────────────────────────────
 echo 📱 Building Android app...
@@ -66,4 +66,4 @@ echo ✅ All done!
 echo 🌐 Farmer Portal: http://localhost:5000/portal
 echo 📡 IoT Endpoint : http://localhost:5000/api/iot/data
 echo.
-pause
+:: pause

@@ -77,20 +77,12 @@ class AgroViewModel(private val repository: AgroRepository) : ViewModel() {
         _selectedLanguage.value = code
     }
 
-    fun login(mobileNumber: String, pass: String, onResult: (String?) -> Unit) {
+    fun login(mobileNumber: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true
-            
-            // LOCAL BYPASS for admin
-            if (mobileNumber == "1234567890" && pass == "123456") {
-                _userState.value = User("1", "Admin Farmer", mobileNumber, "admin")
-                onResult(null)
-                _isLoading.value = false
-                return@launch
-            }
 
             try {
-                val response = repository.login(mobileNumber, pass)
+                val response = repository.login(mobileNumber)
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body?.success == true) {
@@ -102,24 +94,30 @@ class AgroViewModel(private val repository: AgroRepository) : ViewModel() {
                         onResult(body?.error ?: "Invalid credentials")
                     }
                 } else {
-                    // Fallback for demo independence
-                    _userState.value = User("101", "Demo User", mobileNumber)
-                    onResult(null)
+                    val errorBodyString = response.errorBody()?.string()
+                    var errorMessage = "Server Error: ${response.code()}"
+                    if (errorBodyString != null) {
+                        try {
+                            val errorJson = org.json.JSONObject(errorBodyString)
+                            if (errorJson.has("error")) {
+                                errorMessage = errorJson.getString("error")
+                            }
+                        } catch (e: Exception) {}
+                    }
+                    onResult(errorMessage)
                 }
             } catch (e: Exception) {
-                // Connection error fallback: Allow login for demo
-                _userState.value = User("101", "Demo User", mobileNumber)
-                onResult(null)
+                onResult("Network Error: ${e.message}")
             }
             _isLoading.value = false
         }
     }
 
-    fun signup(name: String, mobileNumber: String, pass: String, onResult: (String?) -> Unit) {
+    fun signup(name: String, mobileNumber: String, onResult: (String?) -> Unit) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val response = repository.signup(name, mobileNumber, pass)
+                val response = repository.signup(name, mobileNumber)
                 if (response.isSuccessful) {
                     val body = response.body()
                     if (body?.success == true) {
@@ -130,14 +128,20 @@ class AgroViewModel(private val repository: AgroRepository) : ViewModel() {
                         onResult(body?.error ?: "Registration failed")
                     }
                 } else {
-                    // Fallback
-                    _userState.value = User("202", name, mobileNumber)
-                    onResult(null)
+                    val errorBodyString = response.errorBody()?.string()
+                    var errorMessage = "Server Error: ${response.code()}"
+                    if (errorBodyString != null) {
+                        try {
+                            val errorJson = org.json.JSONObject(errorBodyString)
+                            if (errorJson.has("error")) {
+                                errorMessage = errorJson.getString("error")
+                            }
+                        } catch (e: Exception) {}
+                    }
+                    onResult(errorMessage)
                 }
             } catch (e: Exception) {
-                // Connection error fallback
-                _userState.value = User("202", name, mobileNumber)
-                onResult(null)
+                onResult("Network Error: ${e.message}")
             }
             _isLoading.value = false
         }
@@ -156,7 +160,19 @@ class AgroViewModel(private val repository: AgroRepository) : ViewModel() {
                     }
                     onResult(null)
                 } else {
-                    onResult(response.body()?.get("error")?.toString() ?: "Failed to connect device")
+                    val errorBodyString = response.errorBody()?.string()
+                    var errorMessage = "Failed to connect device"
+                    if (errorBodyString != null) {
+                        try {
+                            val errorJson = org.json.JSONObject(errorBodyString)
+                            if (errorJson.has("error")) {
+                                errorMessage = errorJson.getString("error")
+                            }
+                        } catch (e: Exception) {
+                            // Ignored
+                        }
+                    }
+                    onResult(errorMessage)
                 }
             } catch (e: Exception) {
                 onResult("Network Error: ${e.message}")
